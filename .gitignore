@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.env.example
+*.pem
+.aws/
+
+# Build output
+dist/
+server/public/
+client/dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime & OS
+.DS_Store
+Thumbs.db
+
+# IDE & editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Vite
+.vite/
+
+# Test & coverage
+coverage/
+.nyc_output/
+
+# Local uploads / temp
+uploads/
+tmp/
+temp/
+
+# Optional tooling caches
+.eslintcache
+.cache/
