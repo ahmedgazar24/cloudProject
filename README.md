@@ -123,7 +123,7 @@ node scripts/seed.js
 # From the root:
 npm run dev
 # Client → http://localhost:3000
-# Server → http://localhost:5000
+# Server → http://localhost:5001
 ```
 
 ---
