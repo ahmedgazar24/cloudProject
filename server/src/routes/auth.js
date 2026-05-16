@@ -5,6 +5,21 @@ const { v4: uuid } = require('uuid')
 const { db, T, PutCommand, QueryCommand, ScanCommand } = require('../lib/dynamo')
 const { JWT_SECRET } = require('../middleware/auth')
 
+// ─── GET /auth/teams — public, used by register page ─────────────────────────
+router.get('/teams', async (req, res) => {
+  try {
+    const r = await db.send(new ScanCommand({
+      TableName: T.TEAMS,
+      ProjectionExpression: 'teamId, #n',
+      ExpressionAttributeNames: { '#n': 'name' },
+    }))
+    res.json({ teams: r.Items ?? [] })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ message: 'Failed to fetch teams' })
+  }
+})
+
 // ─── Register ────────────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   const { name, email, password, role = 'EMPLOYEE', teamId = null } = req.body

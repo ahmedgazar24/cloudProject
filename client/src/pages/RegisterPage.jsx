@@ -19,7 +19,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    api.get('/teams').then(r => setTeams(r.data.teams ?? [])).catch(() => {})
+    // Use public endpoint — no auth token needed during registration
+    api.get('/auth/teams').then(r => setTeams(r.data.teams ?? [])).catch(() => {})
   }, [])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
