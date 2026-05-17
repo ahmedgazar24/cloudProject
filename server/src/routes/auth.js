@@ -3,7 +3,15 @@ const bcrypt  = require('bcryptjs')
 const jwt     = require('jsonwebtoken')
 const { v4: uuid } = require('uuid')
 const { db, T, PutCommand, QueryCommand, ScanCommand } = require('../lib/dynamo')
+const { stripNulls } = require('../lib/dynamoConfig')
 const { JWT_SECRET } = require('../middleware/auth')
+const {
+  isCognitoEnabled,
+  signUp,
+  authenticate,
+  findLocalUserByEmail,
+  ensureLocalUser,
+} = require('../lib/cognito')
 
 // ─── GET /auth/teams — public, used by register page ─────────────────────────
 router.get('/teams', async (req, res) => {
@@ -20,39 +28,66 @@ router.get('/teams', async (req, res) => {
   }
 })
 
+function normalizeRole(role) {
+  return ['MANAGER', 'ADMIN', 'EMPLOYEE'].includes(role) ? role : 'EMPLOYEE'
+}
+
+function buildSafeUser(user) {
+  const { password, ...safe } = user
+  return safe
+}
+
+async function findExistingUser(email) {
+  return await db.send(new QueryCommand({
+    TableName: T.USERS,
+    IndexName: 'email-index',
+    KeyConditionExpression: 'email = :e',
+    ExpressionAttributeValues: { ':e': email.toLowerCase() },
+    Limit: 1,
+  }))
+}
+
 // ─── Register ────────────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   const { name, email, password, role = 'EMPLOYEE', teamId = null } = req.body
   if (!name || !email || !password) return res.status(400).json({ message: 'name, email and password required' })
 
   try {
-    // Check email uniqueness
-    const existing = await db.send(new QueryCommand({
-      TableName: T.USERS,
-      IndexName: 'email-index',
-      KeyConditionExpression: 'email = :e',
-      ExpressionAttributeValues: { ':e': email.toLowerCase() },
-      Limit: 1,
-    }))
+    const existing = await findExistingUser(email)
     if (existing.Count > 0) return res.status(409).json({ message: 'Email already registered' })
 
-    const hashed = await bcrypt.hash(password, 10)
+    if (!isCognitoEnabled) {
+      const hashed = await bcrypt.hash(password, 10)
+      const user = {
+        userId:    uuid(),
+        name:      name.trim(),
+        email:     email.toLowerCase(),
+        password:  hashed,
+        role:      normalizeRole(role),
+        teamId:    teamId ?? null,
+        createdAt: new Date().toISOString(),
+      }
+      await db.send(new PutCommand({ TableName: T.USERS, Item: stripNulls(user) }))
+      res.status(201).json({ message: 'Account created', user: buildSafeUser(user) })
+      return
+    }
+
+    const userId = await signUp({ email, password })
     const user = {
-      userId:    uuid(),
+      userId,
       name:      name.trim(),
       email:     email.toLowerCase(),
-      password:  hashed,
-      role:      ['MANAGER','ADMIN','EMPLOYEE'].includes(role) ? role : 'EMPLOYEE',
+      role:      normalizeRole(role),
       teamId:    teamId ?? null,
       createdAt: new Date().toISOString(),
     }
-    await db.send(new PutCommand({ TableName: T.USERS, Item: user }))
+    await db.send(new PutCommand({ TableName: T.USERS, Item: stripNulls(user) }))
 
-    const { password: _, ...safe } = user
-    res.status(201).json({ message: 'Account created', user: safe })
+    res.status(201).json({ message: 'Account created', user: user })
   } catch (e) {
     console.error(e)
-    res.status(500).json({ message: 'Registration failed' })
+    const message = e.code === 'UsernameExistsException' || e.code === 'UsernameExists' ? 'Email already registered' : 'Registration failed'
+    res.status(e.code === 'UsernameExistsException' || e.code === 'UsernameExists' ? 409 : 500).json({ message })
   }
 })
 
@@ -62,30 +97,43 @@ router.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: 'email and password required' })
 
   try {
-    const result = await db.send(new QueryCommand({
-      TableName: T.USERS,
-      IndexName: 'email-index',
-      KeyConditionExpression: 'email = :e',
-      ExpressionAttributeValues: { ':e': email.toLowerCase() },
-      Limit: 1,
-    }))
-    const user = result.Items?.[0]
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' })
+    if (!isCognitoEnabled) {
+      const result = await findExistingUser(email)
+      const user = result.Items?.[0]
+      if (!user) return res.status(401).json({ message: 'Invalid credentials' })
 
-    const ok = await bcrypt.compare(password, user.password)
-    if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
+      const ok = await bcrypt.compare(password, user.password)
+      if (!ok) return res.status(401).json({ message: 'Invalid credentials' })
 
-    const token = jwt.sign(
-      { userId: user.userId, email: user.email, name: user.name, role: user.role, teamId: user.teamId },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    )
+      const token = jwt.sign(
+        { userId: user.userId, email: user.email, name: user.name, role: user.role, teamId: user.teamId },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      )
 
-    const { password: _, ...safe } = user
-    res.json({ user: { ...safe, token } })
+      res.json({ user: { ...buildSafeUser(user), token } })
+      return
+    }
+
+    const authResult = await authenticate({ email, password })
+    const idToken = authResult.IdToken
+    if (!idToken) {
+      return res.status(401).json({ message: 'Invalid Cognito credentials' })
+    }
+
+    const decoded = jwt.decode(idToken) || {}
+    const emailFromToken = decoded.email || decoded['cognito:username'] || email
+    const user = await findLocalUserByEmail(emailFromToken)
+    if (!user) {
+      return res.status(401).json({ message: 'User profile not found' })
+    }
+
+    res.json({ user: { ...buildSafeUser(user), token: idToken } })
   } catch (e) {
     console.error(e)
-    res.status(500).json({ message: 'Login failed' })
+    const status = e.code === 'NotAuthorizedException' || e.code === 'UserNotFoundException' || e.code === 'UserNotConfirmedException' ? 401 : 500
+    const message = e.code === 'NotAuthorizedException' ? 'Invalid credentials' : e.code === 'UserNotConfirmedException' ? 'Please confirm your email first' : e.message || 'Login failed'
+    res.status(status).json({ message })
   }
 })
 

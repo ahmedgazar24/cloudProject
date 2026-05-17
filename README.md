@@ -79,6 +79,7 @@ mini-jira/
 ## Quick Start (Local Development)
 
 ### Prerequisites
+
 - Node.js 18+
 - AWS account with credentials configured (or DynamoDB Local)
 - An S3 bucket created (or skip image uploads in dev)
@@ -131,7 +132,9 @@ npm run dev
 ## AWS Infrastructure Setup
 
 ### DynamoDB Tables
+
 Run `node scripts/createTables.js` — creates 6 tables with GSIs:
+
 - `mj-users` (GSI: email-index, teamId-index)
 - `mj-teams`
 - `mj-projects`
@@ -142,52 +145,66 @@ Run `node scripts/createTables.js` — creates 6 tables with GSIs:
 All tables use **PAY_PER_REQUEST** billing.
 
 ### S3 Buckets
+
 Create two buckets:
+
 - `mj-task-images` — original uploads (private, CORS enabled)
 - `mj-task-images-resized` — Lambda-generated thumbnails
 
 CORS configuration for originals bucket:
+
 ```json
-[{"AllowedHeaders":["*"],"AllowedMethods":["GET","PUT","POST"],"AllowedOrigins":["*"],"ExposeHeaders":[]}]
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["GET", "PUT", "POST"],
+    "AllowedOrigins": ["*"],
+    "ExposeHeaders": []
+  }
+]
 ```
 
 ### Lambda Functions (deploy separately)
 
-| Function | Trigger | Handler file |
-|---|---|---|
-| `mj-image-resizer` | S3 ObjectCreated on `mj-task-images` | `lambdas/imageResizer.js` |
-| `mj-assignment-worker` | SQS `mj-assignment-queue` | `lambdas/assignmentWorker.js` |
+| Function               | Trigger                              | Handler file                  |
+| ---------------------- | ------------------------------------ | ----------------------------- |
+| `mj-image-resizer`     | S3 ObjectCreated on `mj-task-images` | `lambdas/imageResizer.js`     |
+| `mj-assignment-worker` | SQS `mj-assignment-queue`            | `lambdas/assignmentWorker.js` |
 
 Deploy with SAM, CDK, or Serverless Framework. The `imageResizer` requires a **sharp** Lambda layer.
 
 ### SNS + SQS
+
 - Create SNS topic: `mj-task-assignments`
 - Create SQS queue: `mj-assignment-queue`
 - Subscribe SQS to SNS (with raw message delivery OFF — Lambda parses the SNS envelope)
 - Subscribe an SES email endpoint to SNS (optional, for direct email fan-out)
 
 ### Cognito (Production Auth)
+
 1. Create User Pool with custom attributes: `custom:role`, `custom:teamId`
 2. Set `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` in `.env`
 3. The server will automatically switch from local JWT to Cognito RS256 verification
+4. `POST /api/auth/register` and `POST /api/auth/login` now use Cognito when configured, with local auth as a fallback.
 
 ### CloudFront (Optional)
+
 Point CloudFront at the S3 originals and resized buckets. Set `CLOUDFRONT_DOMAIN` in `.env` for fast image delivery.
 
 ---
 
 ## Role-Based Access Control
 
-| Feature | Employee | Manager | Admin |
-|---|:---:|:---:|:---:|
-| View own team's tasks | ✅ | ✅ | ✅ |
-| View all teams' tasks | ❌ | ✅ | ✅ |
-| Create / edit / delete tasks | ❌ | ✅ | ✅ |
-| Update task status | ✅ | ✅ | ✅ |
-| Add comments | ✅ | ✅ | ✅ |
-| Manage teams | ❌ | ✅ | ✅ |
-| Manage projects | ❌ | ✅ | ✅ |
-| View analytics | ❌ | ✅ | ✅ |
+| Feature                      | Employee | Manager | Admin |
+| ---------------------------- | :------: | :-----: | :---: |
+| View own team's tasks        |    ✅    |   ✅    |  ✅   |
+| View all teams' tasks        |    ❌    |   ✅    |  ✅   |
+| Create / edit / delete tasks |    ❌    |   ✅    |  ✅   |
+| Update task status           |    ✅    |   ✅    |  ✅   |
+| Add comments                 |    ✅    |   ✅    |  ✅   |
+| Manage teams                 |    ❌    |   ✅    |  ✅   |
+| Manage projects              |    ❌    |   ✅    |  ✅   |
+| View analytics               |    ❌    |   ✅    |  ✅   |
 
 Team isolation is enforced **server-side** in every route — employees can only access their own team's data regardless of what the client sends.
 
@@ -196,24 +213,27 @@ Team isolation is enforced **server-side** in every route — employees can only
 ## API Reference
 
 ### Auth
-| Method | Path | Body |
-|---|---|---|
-| POST | `/api/auth/register` | `{ name, email, password, role, teamId }` |
-| POST | `/api/auth/login` | `{ email, password }` → returns `{ user: { ...fields, token } }` |
+
+| Method | Path                 | Body                                                             |
+| ------ | -------------------- | ---------------------------------------------------------------- |
+| POST   | `/api/auth/register` | `{ name, email, password, role, teamId }`                        |
+| POST   | `/api/auth/login`    | `{ email, password }` → returns `{ user: { ...fields, token } }` |
 
 ### Tasks
-| Method | Path | Auth |
-|---|---|---|
-| GET | `/api/tasks` | All roles |
-| GET | `/api/tasks/:id` | All roles |
-| POST | `/api/tasks` | Manager |
-| PATCH | `/api/tasks/:id` | Manager (full) / Employee (status only) |
-| DELETE | `/api/tasks/:id` | Manager |
-| GET | `/api/tasks/:id/comments` | All roles |
-| POST | `/api/tasks/:id/comments` | All roles |
-| GET | `/api/tasks/:id/audit` | All roles |
+
+| Method | Path                      | Auth                                    |
+| ------ | ------------------------- | --------------------------------------- |
+| GET    | `/api/tasks`              | All roles                               |
+| GET    | `/api/tasks/:id`          | All roles                               |
+| POST   | `/api/tasks`              | Manager                                 |
+| PATCH  | `/api/tasks/:id`          | Manager (full) / Employee (status only) |
+| DELETE | `/api/tasks/:id`          | Manager                                 |
+| GET    | `/api/tasks/:id/comments` | All roles                               |
+| POST   | `/api/tasks/:id/comments` | All roles                               |
+| GET    | `/api/tasks/:id/audit`    | All roles                               |
 
 ### Teams, Projects, Users
+
 Standard CRUD — see route files for details.
 
 ---
@@ -221,6 +241,7 @@ Standard CRUD — see route files for details.
 ## Event-Driven Flows (AWS)
 
 ### Task Assignment Flow
+
 ```
 Manager creates/updates task with assignee
   → Express publishes to SNS topic
@@ -229,6 +250,7 @@ Manager creates/updates task with assignee
 ```
 
 ### Image Processing Flow
+
 ```
 Manager uploads task image
   → multer-s3 uploads to S3 originals bucket

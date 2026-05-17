@@ -1,5 +1,6 @@
 const jwt        = require('jsonwebtoken')
 const jwksClient = require('jwks-rsa')
+const { findLocalUserByEmail } = require('../lib/cognito')
 
 const COGNITO_REGION  = process.env.AWS_REGION     ?? 'us-east-1'
 const USER_POOL_ID    = process.env.COGNITO_USER_POOL_ID
@@ -47,16 +48,26 @@ function authenticate(req, res, next) {
   }
 
   // Prod mode: Cognito JWT
-  jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
+  jwt.verify(token, getKey, { algorithms: ['RS256'] }, async (err, decoded) => {
     if (err) return res.status(401).json({ message: 'Invalid token' })
-    req.user = {
-      userId: decoded.sub,
-      email:  decoded.email,
-      name:   decoded.name ?? decoded['cognito:username'],
-      role:   decoded['custom:role']   ?? 'EMPLOYEE',
-      teamId: decoded['custom:teamId'] ?? null,
+    try {
+      const email = decoded.email || decoded['cognito:username'] || decoded.username
+      const user = await findLocalUserByEmail(email)
+      if (!user) {
+        return res.status(401).json({ message: 'User profile not found' })
+      }
+      req.user = {
+        userId: user.userId,
+        email:  user.email,
+        name:   user.name,
+        role:   user.role ?? 'EMPLOYEE',
+        teamId: user.teamId ?? null,
+      }
+      next()
+    } catch (e) {
+      console.error(e)
+      res.status(500).json({ message: 'Authentication failed' })
     }
-    next()
   })
 }
 

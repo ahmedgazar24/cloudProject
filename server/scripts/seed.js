@@ -3,11 +3,12 @@
  * Seeds DynamoDB with demo data for local development.
  * Run: node scripts/seed.js
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') })
+const path = require('path')
+require('dotenv').config({ path: path.join(__dirname, '../.env') })
 const bcrypt  = require('bcryptjs')
 const { v4: uuid } = require('uuid')
 const { DynamoDBClient }        = require('@aws-sdk/client-dynamodb')
-const { DynamoDBDocumentClient, PutCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb')
+const { DynamoDBDocumentClient, PutCommand } = require('@aws-sdk/lib-dynamodb')
 const { getDynamoClientConfig, stripNulls } = require('../src/lib/dynamoConfig')
 
 const client = new DynamoDBClient(getDynamoClientConfig())
