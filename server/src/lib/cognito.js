@@ -11,17 +11,23 @@ const cognito = new AWS.CognitoIdentityServiceProvider()
 
 const isCognitoEnabled = Boolean(USER_POOL_ID && CLIENT_ID)
 
+function normalizeEmail(email) {
+  return email?.toString().trim().toLowerCase() || null
+}
+
 function getUserAttributes(email) {
-  return [{ Name: 'email', Value: email.toLowerCase() }]
+  const normalizedEmail = normalizeEmail(email)
+  return [{ Name: 'email', Value: normalizedEmail }]
 }
 
 async function findLocalUserByEmail(email) {
-  if (!email) return null
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
   const result = await db.send(new QueryCommand({
     TableName: T.USERS,
     IndexName: 'email-index',
     KeyConditionExpression: 'email = :e',
-    ExpressionAttributeValues: { ':e': email.toLowerCase() },
+    ExpressionAttributeValues: { ':e': normalizedEmail },
     Limit: 1,
   }))
   return result.Items?.[0] ?? null
@@ -39,11 +45,12 @@ async function signUp({ email, password }) {
     throw new Error('Cognito is not configured')
   }
 
+  const normalizedEmail = normalizeEmail(email)
   const params = {
     ClientId: CLIENT_ID,
-    Username: email.toLowerCase(),
+    Username: normalizedEmail,
     Password: password,
-    UserAttributes: getUserAttributes(email),
+    UserAttributes: getUserAttributes(normalizedEmail),
   }
 
   const result = await cognito.signUp(params).promise()
@@ -55,18 +62,20 @@ async function authenticate({ email, password }) {
     throw new Error('Cognito is not configured')
   }
 
+  const normalizedEmail = normalizeEmail(email)
   const params = {
     AuthFlow: 'USER_PASSWORD_AUTH',
     ClientId: CLIENT_ID,
     AuthParameters: {
-      USERNAME: email.toLowerCase(),
+      USERNAME: normalizedEmail,
       PASSWORD: password,
     },
   }
+
   await cognito.adminConfirmSignUp({
-  UserPoolId: process.env.COGNITO_USER_POOL_ID,
-  Username: email,
-}).promise();
+    UserPoolId: process.env.COGNITO_USER_POOL_ID,
+    Username: normalizedEmail,
+  }).promise()
 
   const result = await cognito.initiateAuth(params).promise()
   return result.AuthenticationResult

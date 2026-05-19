@@ -37,34 +37,27 @@ function buildSafeUser(user) {
   return safe
 }
 
-async function findExistingUser(email) {
-  return await db.send(new QueryCommand({
-    TableName: T.USERS,
-    IndexName: 'email-index',
-    KeyConditionExpression: 'email = :e',
-    ExpressionAttributeValues: { ':e': email.toLowerCase() },
-    Limit: 1,
-  }))
-}
-
 // ─── Register ────────────────────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   const { name, email, password, role = 'EMPLOYEE', teamId = null } = req.body
   if (!name || !email || !password) return res.status(400).json({ message: 'name, email and password required' })
 
   try {
-    const existing = await findExistingUser(email)
-    if (existing.Count > 0) return res.status(409).json({ message: 'Email already registered' })
+    const existing = await findLocalUserByEmail(email)
+    if (existing) return res.status(409).json({ message: 'Email already registered' })
+
+    const normalizedEmail = email.toLowerCase().trim()
+    const teamIdValue = teamId ? teamId : null
 
     if (!isCognitoEnabled) {
       const hashed = await bcrypt.hash(password, 10)
       const user = {
         userId:    uuid(),
         name:      name.trim(),
-        email:     email.toLowerCase(),
+        email:     normalizedEmail,
         password:  hashed,
         role:      normalizeRole(role),
-        teamId:    teamId ?? null,
+        teamId:    teamIdValue,
         createdAt: new Date().toISOString(),
       }
       await db.send(new PutCommand({ TableName: T.USERS, Item: stripNulls(user) }))
@@ -72,13 +65,13 @@ router.post('/register', async (req, res) => {
       return
     }
 
-    const userId = await signUp({ email, password })
+    const userId = await signUp({ email: normalizedEmail, password })
     const user = {
       userId,
       name:      name.trim(),
-      email:     email.toLowerCase(),
+      email:     normalizedEmail,
       role:      normalizeRole(role),
-      teamId:    teamId ?? null,
+      teamId:    teamIdValue,
       createdAt: new Date().toISOString(),
     }
     await db.send(new PutCommand({ TableName: T.USERS, Item: stripNulls(user) }))
@@ -98,8 +91,7 @@ router.post('/login', async (req, res) => {
 
   try {
     if (!isCognitoEnabled) {
-      const result = await findExistingUser(email)
-      const user = result.Items?.[0]
+      const user = await findLocalUserByEmail(email)
       if (!user) return res.status(401).json({ message: 'Invalid credentials' })
 
       const ok = await bcrypt.compare(password, user.password)
