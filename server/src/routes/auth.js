@@ -72,12 +72,13 @@ router.post('/register', async (req, res) => {
       return
     }
 
-    const userId = await signUp({ email, password })
+    const normalizedRole = normalizeRole(role)
+    const userId = await signUp({ email, password, role: normalizedRole, teamId })
     const user = {
       userId,
       name:      name.trim(),
       email:     email.toLowerCase(),
-      role:      normalizeRole(role),
+      role:      normalizedRole,
       teamId:    teamId ?? null,
       createdAt: new Date().toISOString(),
     }

@@ -61,6 +61,7 @@ const tables = [
       { AttributeName: 'taskId', AttributeType: 'S' },
       { AttributeName: 'teamId', AttributeType: 'S' },
       { AttributeName: 'status', AttributeType: 'S' },
+      { AttributeName: 'assigneeId', AttributeType: 'S' },
     ],
     KeySchema: [{ AttributeName: 'taskId', KeyType: 'HASH' }],
     GlobalSecondaryIndexes: [
@@ -69,6 +70,13 @@ const tables = [
         KeySchema: [
           { AttributeName: 'teamId', KeyType: 'HASH' },
           { AttributeName: 'status', KeyType: 'RANGE' },
+        ],
+        Projection: { ProjectionType: 'ALL' },
+      },
+      {
+        IndexName: 'assigneeId-index',
+        KeySchema: [
+          { AttributeName: 'assigneeId', KeyType: 'HASH' },
         ],
         Projection: { ProjectionType: 'ALL' },
       },

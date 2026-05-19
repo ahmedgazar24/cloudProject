@@ -11,8 +11,11 @@ const cognito = new AWS.CognitoIdentityServiceProvider()
 
 const isCognitoEnabled = Boolean(USER_POOL_ID && CLIENT_ID)
 
-function getUserAttributes(email) {
-  return [{ Name: 'email', Value: email.toLowerCase() }]
+function getUserAttributes(email, role, teamId) {
+  const attrs = [{ Name: 'email', Value: email.toLowerCase() }]
+  if (role) attrs.push({ Name: 'custom:role', Value: role })
+  if (teamId) attrs.push({ Name: 'custom:teamId', Value: teamId })
+  return attrs
 }
 
 async function findLocalUserByEmail(email) {
@@ -34,7 +37,7 @@ async function ensureLocalUser(user) {
   return user
 }
 
-async function signUp({ email, password }) {
+async function signUp({ email, password, role, teamId }) {
   if (!isCognitoEnabled) {
     throw new Error('Cognito is not configured')
   }
@@ -43,7 +46,7 @@ async function signUp({ email, password }) {
     ClientId: CLIENT_ID,
     Username: email.toLowerCase(),
     Password: password,
-    UserAttributes: getUserAttributes(email),
+    UserAttributes: getUserAttributes(email, role, teamId),
   }
 
   const result = await cognito.signUp(params).promise()

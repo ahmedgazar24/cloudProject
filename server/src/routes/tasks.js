@@ -4,7 +4,7 @@ const {
   db, T, GetCommand, PutCommand, UpdateCommand, DeleteCommand,
   QueryCommand, ScanCommand
 } = require('../lib/dynamo')
-const { upload, deleteS3Object, getImageUrl } = require('../lib/s3')
+const { upload, deleteS3Object, getImageUrl, BUCKET_RESIZED } = require('../lib/s3')
 const { publishTaskAssigned, putMetric } = require('../lib/events')
 const { requireRole } = require('../middleware/auth')
 
@@ -22,6 +22,14 @@ function buildUpdate(fields) {
   return { expression: 'SET ' + exp.join(', '), names, vals }
 }
 
+function enhanceTask(task) {
+  return {
+    ...task,
+    imageUrl: task.imageKey ? getImageUrl(task.imageKey) : null,
+    resizedImageUrl: task.imageKey ? getImageUrl(task.imageKey, BUCKET_RESIZED) : null,
+  }
+}
+
 // ─── GET /tasks ───────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   const { user } = req
@@ -31,8 +39,15 @@ router.get('/', async (req, res) => {
     let items = []
 
     if (user.role === 'MANAGER' || user.role === 'ADMIN') {
-      // Managers see all tasks, optionally filtered by team
-      if (teamId) {
+      if (assigneeId) {
+        const r = await db.send(new QueryCommand({
+          TableName: T.TASKS,
+          IndexName: 'assigneeId-index',
+          KeyConditionExpression: 'assigneeId = :a',
+          ExpressionAttributeValues: { ':a': assigneeId },
+        }))
+        items = r.Items ?? []
+      } else if (teamId) {
         const r = await db.send(new QueryCommand({
           TableName: T.TASKS,
           IndexName: 'teamId-index',
@@ -45,7 +60,6 @@ router.get('/', async (req, res) => {
         items = r.Items ?? []
       }
     } else {
-      // Employees: server-side team isolation
       const userTeamId = user.teamId
       if (!userTeamId) return res.json({ tasks: [] })
 
@@ -59,15 +73,12 @@ router.get('/', async (req, res) => {
     }
 
     // Additional filters
-    if (priority) items = items.filter(t => t.priority === priority)
-    if (status)   items = items.filter(t => t.status   === status)
-    if (projectId)items = items.filter(t => t.projectId === projectId)
+    if (assigneeId) items = items.filter(t => t.assigneeId === assigneeId)
+    if (priority)   items = items.filter(t => t.priority === priority)
+    if (status)     items = items.filter(t => t.status === status)
+    if (projectId)  items = items.filter(t => t.projectId === projectId)
 
-    // Attach pre-signed or CDN URLs
-    items = items.map(t => ({
-      ...t,
-      imageUrl: t.imageKey ? getImageUrl(t.imageKey) : null,
-    }))
+    items = items.map(enhanceTask)
 
     res.json({ tasks: items })
   } catch (e) {
@@ -88,8 +99,7 @@ router.get('/:id', async (req, res) => {
     if (user.role === 'EMPLOYEE' && task.teamId !== user.teamId) {
       return res.status(403).json({ message: 'Forbidden' })
     }
-    task.imageUrl = task.imageKey ? getImageUrl(task.imageKey) : null
-    res.json({ task })
+    res.json({ task: enhanceTask(task) })
   } catch (e) {
     res.status(500).json({ message: 'Failed to fetch task' })
   }
@@ -140,7 +150,7 @@ router.post('/', requireRole('MANAGER', 'ADMIN'), upload.single('image'), async 
     }
     putMetric('TasksCreated', 1)
 
-    res.status(201).json({ task: { ...task, imageUrl: imageKey ? getImageUrl(imageKey) : null } })
+    res.status(201).json({ task: enhanceTask(task) })
   } catch (e) {
     console.error(e)
     res.status(500).json({ message: 'Failed to create task' })
@@ -185,9 +195,8 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
       if (updates.status === 'DONE') putMetric('TasksClosed', 1, [{ Name: 'TeamId', Value: task.teamId ?? 'none' }])
     }
 
-    // Image replacement
+    // Image replacement: keep prior object in S3 so previous versions are preserved
     if (req.file?.key) {
-      if (task.imageKey) await deleteS3Object(task.imageKey) // keep old (or skip to retain)
       updates.imageKey = req.file.key
     }
 
@@ -216,8 +225,7 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
       ReturnValues: 'ALL_NEW',
     }))
     const updated = r.Attributes
-    updated.imageUrl = updated.imageKey ? getImageUrl(updated.imageKey) : null
-    res.json({ task: updated })
+    res.json({ task: enhanceTask(updated) })
   } catch (e) {
     console.error(e)
     res.status(500).json({ message: 'Failed to update task' })
