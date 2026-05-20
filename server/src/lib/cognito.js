@@ -52,8 +52,15 @@ async function signUp({ email, password }) {
     Password: password,
     UserAttributes: getUserAttributes(normalizedEmail),
   }
+  
 
   const result = await cognito.signUp(params).promise()
+
+    await cognito.adminConfirmSignUp({
+    UserPoolId: process.env.COGNITO_USER_POOL_ID,
+    Username: normalizedEmail,
+  }).promise()
+  
   return result.UserSub
 }
 
