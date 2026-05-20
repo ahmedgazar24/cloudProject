@@ -72,11 +72,6 @@ async function authenticate({ email, password }) {
     },
   }
 
-  await cognito.adminConfirmSignUp({
-    UserPoolId: process.env.COGNITO_USER_POOL_ID,
-    Username: normalizedEmail,
-  }).promise()
-
   const result = await cognito.initiateAuth(params).promise()
   return result.AuthenticationResult
 }
