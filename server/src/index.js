@@ -31,7 +31,14 @@ app.use('/api/teams',    authenticate, teamRoutes)
 app.use('/api/users',    authenticate, userRoutes)
 
 // Health check
-app.get('/api/health', (_, res) => res.json({ status: 'ok', ts: Date.now() }))
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 
 // Serve React build in production
 if (process.env.NODE_ENV === 'production') {
