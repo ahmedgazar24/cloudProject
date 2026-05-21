@@ -1,65 +1,98 @@
 /**
  * Lambda: assignment-worker
- * Trigger: SQS queue (mj-assignment-queue) — messages published via SNS fan-out
- * Action : Sends assignment notification email via SES
+ * Trigger: SQS queue subscribed to the task-assignment SNS topic
+ * Action : Writes an activity log entry and publishes a CloudWatch metric
  */
-const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses')
+const { CloudWatchClient, PutMetricDataCommand } = require('@aws-sdk/client-cloudwatch')
+const { db, T, PutCommand } = require('../lib/dynamo')
 
-const ses        = new SESClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
-const FROM_EMAIL = process.env.SES_FROM_EMAIL ?? 'noreply@flowboard.app'
+const cloudwatch = new CloudWatchClient({ region: process.env.AWS_REGION ?? 'us-east-1' })
+const ACTIVITY_TABLE = process.env.TABLE_ACTIVITY ?? T.AUDIT
+const CW_NAMESPACE = process.env.CW_NAMESPACE ?? 'FlowBoard'
+
+function parsePayload(recordBody) {
+  const body = JSON.parse(recordBody)
+
+  if (body.Type === 'Notification' && body.Message) {
+    return JSON.parse(body.Message)
+  }
+
+  if (typeof body.Message === 'string') {
+    return JSON.parse(body.Message)
+  }
+
+  return body
+}
+
+function buildActivityLog(payload, messageId) {
+  const createdAt = payload.timestamp ?? new Date().toISOString()
+
+  return {
+    logId: messageId ? `assignment-${messageId}` : `assignment-${Date.now()}`,
+    taskId: payload.taskId,
+    eventType: payload.eventType ?? payload.action ?? 'TASK_ASSIGNED',
+    taskTitle: payload.taskTitle ?? payload.title,
+    assigneeId: payload.assigneeId,
+    assigneeName: payload.assigneeName,
+    assigneeEmail: payload.assigneeEmail,
+    teamId: payload.teamId,
+    managerName: payload.managerName,
+    message: `${payload.managerName ?? 'Manager'} assigned "${payload.taskTitle ?? payload.title ?? 'a task'}" to ${payload.assigneeName ?? payload.assigneeEmail ?? 'an employee'}`,
+    createdAt,
+  }
+}
+
+async function writeActivityLog(activityLog) {
+  await db.send(new PutCommand({
+    TableName: ACTIVITY_TABLE,
+    Item: activityLog,
+  }))
+}
+
+async function publishMetric(payload) {
+  await cloudwatch.send(new PutMetricDataCommand({
+    Namespace: CW_NAMESPACE,
+    MetricData: [{
+      MetricName: 'TasksAssignedPerTeam',
+      Value: 1,
+      Unit: 'Count',
+      Dimensions: [{
+        Name: 'TeamId',
+        Value: payload.teamId ?? 'none',
+      }],
+      Timestamp: new Date(),
+    }],
+  }))
+}
 
 exports.handler = async (event) => {
-  for (const record of event.Records) {
-    let payload
+  console.log('EVENT RECEIVED:', JSON.stringify(event, null, 2))
+
+  const batchItemFailures = []
+
+  for (const record of event.Records ?? []) {
     try {
-      // SNS wraps the message inside SQS body
-      const sqsBody = JSON.parse(record.body)
-      payload       = JSON.parse(sqsBody.Message ?? record.body)
-    } catch {
-      console.error('Failed to parse SQS message:', record.body)
-      continue
-    }
+      const payload = parsePayload(record.body)
+      console.log('Parsed Payload:', payload)
 
-    const { taskTitle, assigneeName, assigneeEmail, managerName, taskId } = payload
+      const activityLog = buildActivityLog(payload, record.messageId)
+      await writeActivityLog(activityLog)
+      await publishMetric(payload)
 
-    if (!assigneeEmail) {
-      console.warn('No assignee email, skipping SES send for task', taskId)
-      continue
-    }
-
-    const appUrl  = process.env.APP_URL ?? 'https://flowboard.app'
-    const taskUrl = `${appUrl}/tasks?task=${taskId}`
-
-    const html = `
-      <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
-        <h2 style="color:#3558f7">You have a new task!</h2>
-        <p>Hi ${assigneeName},</p>
-        <p><strong>${managerName}</strong> has assigned you a task on FlowBoard:</p>
-        <div style="background:#f0f4ff;border-left:4px solid #3558f7;padding:16px 20px;border-radius:8px;margin:20px 0">
-          <strong style="font-size:16px">${taskTitle}</strong>
-        </div>
-        <a href="${taskUrl}" style="display:inline-block;background:#3558f7;color:white;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600">
-          View Task →
-        </a>
-        <p style="color:#999;font-size:12px;margin-top:32px">FlowBoard · Team Task Management</p>
-      </div>
-    `
-
-    try {
-      await ses.send(new SendEmailCommand({
-        Source: FROM_EMAIL,
-        Destination: { ToAddresses: [assigneeEmail] },
-        Message: {
-          Subject: { Data: `[FlowBoard] New task assigned: ${taskTitle}`, Charset: 'UTF-8' },
-          Body: {
-            Html: { Data: html, Charset: 'UTF-8' },
-            Text: { Data: `Hi ${assigneeName}, you've been assigned: "${taskTitle}". View it at ${taskUrl}`, Charset: 'UTF-8' },
-          },
-        },
-      }))
-      console.log(`Email sent to ${assigneeEmail} for task ${taskId}`)
+      console.log(`Assignment processed for task ${payload.taskId}`)
     } catch (err) {
-      console.error(`SES send failed for ${assigneeEmail}:`, err.message)
+      console.error('ERROR PROCESSING MESSAGE:', err)
+
+      if (record.messageId) {
+        batchItemFailures.push({ itemIdentifier: record.messageId })
+      }
     }
   }
+
+  return { batchItemFailures }
+}
+
+module.exports._internals = {
+  parsePayload,
+  buildActivityLog,
 }

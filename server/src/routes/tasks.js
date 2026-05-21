@@ -182,6 +182,7 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
 
     // Status audit log
     if (updates.status && updates.status !== task.status) {
+      const changedAt = new Date()
       const log = {
         logId:     uuid(),
         taskId:    task.taskId,
@@ -189,10 +190,20 @@ router.patch('/:id', upload.single('image'), async (req, res) => {
         toStatus:   updates.status,
         userId:     user.userId,
         userName:   user.name,
-        createdAt:  new Date().toISOString(),
+        createdAt:  changedAt.toISOString(),
       }
       await db.send(new PutCommand({ TableName: T.AUDIT, Item: log }))
-      if (updates.status === 'DONE') putMetric('TasksClosed', 1, [{ Name: 'TeamId', Value: task.teamId ?? 'none' }])
+      if (updates.status === 'DONE') {
+        const dimensions = [{ Name: 'TeamId', Value: task.teamId ?? 'none' }]
+        putMetric('TasksClosed', 1, dimensions)
+
+        if (task.createdAt) {
+          const secondsToClose = Math.max(0, (changedAt.getTime() - new Date(task.createdAt).getTime()) / 1000)
+          if (Number.isFinite(secondsToClose)) {
+            putMetric('AverageTimeToClose', secondsToClose, dimensions, 'Seconds')
+          }
+        }
+      }
     }
 
     // Image replacement: keep prior object in S3 so previous versions are preserved

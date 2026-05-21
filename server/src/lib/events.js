@@ -42,15 +42,14 @@ async function publishTaskAssigned({ task, assigneeName, assigneeEmail, managerN
 /**
  * Publish a custom CloudWatch metric.
  */
-async function putMetric(metricName, value, dimensions = []) {
-  if (!process.env.CW_NAMESPACE) return
+async function putMetric(metricName, value, dimensions = [], unit = 'Count') {
   try {
     await cw.send(new PutMetricDataCommand({
       Namespace:  process.env.CW_NAMESPACE ?? 'FlowBoard',
       MetricData: [{
         MetricName: metricName,
         Value:      value,
-        Unit:       'Count',
+        Unit:       unit,
         Dimensions: dimensions,
         Timestamp:  new Date(),
       }],
