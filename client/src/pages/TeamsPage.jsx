@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Users, Trash2, Edit2, UserCog, ChevronDown, ChevronUp, UserMinus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Users, Trash2, Edit2, UserCog, ChevronDown, ChevronUp, UserMinus, UserPlus } from 'lucide-react'
 import Header from '../components/layout/Header'
 import Modal from '../components/ui/Modal'
 import EmptyState from '../components/ui/EmptyState'
@@ -247,6 +248,7 @@ function AllEmployeesModal({ allUsers, teams, open, onClose, onUsersChanged }) {
 
 // ─── Main TeamsPage ───────────────────────────────────────────────────────────
 export default function TeamsPage() {
+  const navigate = useNavigate()
   const [teams,    setTeams]    = useState([])
   const [allUsers, setAllUsers] = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -353,6 +355,13 @@ export default function TeamsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={e => { e.stopPropagation(); navigate(`/register?teamId=${t.teamId}`) }}
+                        className="btn-ghost p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                        title="Add new member"
+                      >
+                        <UserPlus size={15} />
+                      </button>
                       <button
                         onClick={e => { e.stopPropagation(); setManagingTeam(t); setShowManage(true) }}
                         className="btn-ghost p-1.5 rounded-lg text-brand-600 hover:bg-brand-50"

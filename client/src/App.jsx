@@ -25,13 +25,14 @@ function ManagerRoute({ children }) {
   return children
 }
 
-function PublicRoute({ children }) {
+// /register: manager/admin only — everyone else gets redirected
+function ManagerRegisterRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return null
-  if (user) return <Navigate to="/dashboard" replace />
-  return children
+  if (loading) return <div className="min-h-screen flex items-center justify-center"><PageLoader /></div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.role === 'MANAGER' || user.role === 'ADMIN') return children
+  return <Navigate to="/dashboard" replace />
 }
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -47,7 +48,12 @@ export default function App() {
         <Routes>
           {/* Public */}
           <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+          {/* Register: manager/admin only */}
+          <Route path="/register" element={
+            <ManagerRegisterRoute>
+              <RegisterPage />
+            </ManagerRegisterRoute>
+          } />
 
           {/* Protected app shell */}
           <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>

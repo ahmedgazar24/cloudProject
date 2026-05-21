@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Zap, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { Spinner } from '../components/ui/Spinner'
@@ -87,12 +87,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-xs text-center text-white/40 mt-6">
-            No account?{' '}
-            <Link to="/register" className="text-brand-300 hover:text-brand-200 font-medium">
-              Create one
-            </Link>
-          </p>
+
         </div>
 
         <p className="text-center text-xs text-white/20 mt-4">
