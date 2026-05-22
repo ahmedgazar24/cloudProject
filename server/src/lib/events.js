@@ -9,6 +9,27 @@ const cw  = new CloudWatchClient({ region: process.env.AWS_REGION ?? 'us-east-1'
 const TOPIC_ARN = process.env.SNS_TOPIC_TASK_ASSIGNMENT
 const QUEUE_URL = process.env.SQS_QUEUE_ASSIGNMENT_WORKER
 
+function buildAssignmentEmail({ task, assigneeName, managerName }) {
+  const appUrl = process.env.APP_URL ?? 'https://flowboard.app'
+  const taskUrl = `${appUrl}/tasks?task=${task.taskId}`
+  const deadline = task.deadline ? `\nDeadline: ${task.deadline}` : ''
+  const priority = task.priority ? `\nPriority: ${task.priority}` : ''
+  const team = task.teamName || task.teamId ? `\nTeam: ${task.teamName ?? task.teamId}` : ''
+
+  return [
+    `Hi ${assigneeName ?? 'there'},`,
+    '',
+    `${managerName ?? 'Your manager'} assigned you a new task in FlowBoard.`,
+    '',
+    `Task: ${task.title}`,
+    `${priority}${deadline}${team}`.trim(),
+    '',
+    `Open task: ${taskUrl}`,
+    '',
+    'FlowBoard - Team Task Management',
+  ].filter(Boolean).join('\n')
+}
+
 /**
  * Publish task-assignment event to SNS (fans out to email + SQS worker).
  * Called whenever a manager assigns/creates a task.
@@ -27,11 +48,17 @@ async function publishTaskAssigned({ task, assigneeName, assigneeEmail, managerN
     managerName,
     timestamp:  new Date().toISOString(),
   })
+  const emailMessage = buildAssignmentEmail({ task, assigneeName, managerName })
 
   try {
     await sns.send(new PublishCommand({
       TopicArn: TOPIC_ARN,
-      Message:  message,
+      Message: JSON.stringify({
+        default: message,
+        sqs: message,
+        email: emailMessage,
+      }),
+      MessageStructure: 'json',
       Subject:  `[FlowBoard] You've been assigned: ${task.title}`,
     }))
   } catch (e) {
