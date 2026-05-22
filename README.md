@@ -1,6 +1,15 @@
 # FlowBoard — Team Task Management
 
 A full-stack task management web app (mini-Jira) built with **React**, **Node.js/Express**, and **AWS** (DynamoDB, S3, Cognito, SNS, SQS, Lambda, CloudWatch).
+Test Credinntials
+
+Manager
+email:kiromanager@gmail.com
+pass:Password1!
+
+Employee
+email:kiroreda750@gmail.com
+pass:1234!Pass
 
 ---
 
