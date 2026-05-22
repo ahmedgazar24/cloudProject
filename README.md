@@ -2,6 +2,7 @@
 
 A full-stack task management web app (mini-Jira) built with **React**, **Node.js/Express**, and **AWS** (DynamoDB, S3, Cognito, SNS, SQS, Lambda, CloudWatch).
 Test Credinntials
+Video link: https://drive.google.com/file/d/1NYzDwbNlVBScTshrKkT8Xk-yFxeTCtHS/view?usp=sharing
 
 Manager
 email:kiromanager@gmail.com
