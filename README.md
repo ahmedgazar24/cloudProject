@@ -5,34 +5,9 @@ A full-stack task management web app (mini-Jira) built with **React**, **Node.js
 ---
 
 ## Architecture Overview
+<img width="4540" height="3916" alt="architecture" src="https://github.com/user-attachments/assets/14199fcf-a0dd-49a9-b79a-078a8b1ad057" />
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Browser (React)                       │
-│  Dashboard · Kanban Board · Task Form · Analytics       │
-└────────────────────┬────────────────────────────────────┘
-                     │ HTTPS / REST
-┌────────────────────▼────────────────────────────────────┐
-│              Express API  (Node.js)                      │
-│  /api/auth  /api/tasks  /api/teams  /api/projects       │
-│  JWT (dev) or Cognito JWT (prod) auth                    │
-└──┬───────────┬──────────────┬───────────────────────────┘
-   │           │              │
-   ▼           ▼              ▼
-DynamoDB      S3            SNS Topic
-(6 tables)  (images)    (task assignments)
-                              │
-                    ┌─────────┴──────────┐
-                    ▼                    ▼
-               SES Email           SQS Queue
-             (Lambda worker)    (assignment-worker Lambda)
-                                         │
-                                   S3 ObjectCreated
-                                         ▼
-                                  image-resizer Lambda
-```
 
----
 
 ## Project Structure
 
