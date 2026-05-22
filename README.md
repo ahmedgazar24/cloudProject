@@ -170,12 +170,14 @@ CORS configuration for originals bucket:
 | ---------------------- | ------------------------------------ | ----------------------------- |
 | `mj-image-resizer`     | S3 ObjectCreated on `mj-task-images` | `lambdas/imageResizer.js`     |
 | `mj-assignment-worker` | SQS `mj-assignment-queue`            | `lambdas/assignmentWorker.js` |
+| `mj-daily-digest`      | EventBridge rule at 9:00 AM daily    | `lambdas/dailyDigest.js`      |
 
 Deploy with SAM, CDK, or Serverless Framework. The `imageResizer` requires a **sharp** Lambda layer.
 
 ### SNS + SQS
 
 - Create SNS topic: `mj-task-assignments`
+- Create SNS topic: `mj-daily-digest`
 - Create SQS queue: `mj-assignment-queue`
 - Subscribe SQS to SNS (with raw message delivery OFF — Lambda parses the SNS envelope)
 - Subscribe an SES email endpoint to SNS (optional, for direct email fan-out)

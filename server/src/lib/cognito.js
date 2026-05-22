@@ -40,7 +40,7 @@ async function ensureLocalUser(user) {
   return user
 }
 
-async function signUp({ email, password }) {
+async function signUp({ email, password, role, teamId }) {
   if (!isCognitoEnabled) {
     throw new Error('Cognito is not configured')
   }
